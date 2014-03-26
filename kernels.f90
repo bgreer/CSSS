@@ -59,6 +59,9 @@ Type :: Tile
 	Integer :: tilesize ! size in degrees, should match kers(kerind)%kersize
 	Real*8, Allocatable :: vx(:), vy(:) ! one for each kernel, each timestep
 	Real*8, Allocatable :: weightx(:), weighty(:) ! for keeping track of weighting
+	! for knowing which grid points in the sim are relevant:
+	INTEGER :: numgridpts
+	INTEGER, ALLOCATABLE :: gridptx(:), grdpty(:)
 End Type Tile
 
 ! Kernel description, applies to all kernels
@@ -69,6 +72,7 @@ Real*8, Allocatable :: ker_depth(:) ! initial z-positions of kernels
 Type(Kernel), Allocatable :: kers(:) ! main array of kernels. includes all sizes
 
 ! Tile set
+REAL*8 :: apode
 Integer :: numtiles
 Type(Tile), Allocatable :: tiles(:)
 
@@ -351,7 +355,7 @@ Contains
 		Real*8, Intent(IN) :: clon, clat, lonrn, latrn, densepack
 		Integer, Intent(IN) :: numts
 		Integer, Intent(IN) :: tilesizes(numts)
-		Real*8 :: space, apode, latmin, lonmin
+		Real*8 :: space, latmin, lonmin
 		Integer :: ii, ij, ix, iy, kertsind, cnt, nx, ny, ntiles(numts)
 
 		apode = 0.9375D0
@@ -391,11 +395,12 @@ Contains
 					! set central position
 					tiles(cnt)%clon = lonmin + (ix-1)*space
 					tiles(cnt)%clat = latmin + (iy-1)*space
-					! wrap longitude
-					If (tiles(cnt)%clon .GT. 360D0) &
-						tiles(cnt)%clon = tiles(cnt)%clon - 360D0
-					If (tiles(cnt)%clon .LT. 0D0) &
-						tiles(cnt)%clon = tiles(cnt)%clon + 360D0
+					! don't wrap longitude
+					! because the simulation doesnt
+!					If (tiles(cnt)%clon .GT. 360D0) &
+!						tiles(cnt)%clon = tiles(cnt)%clon - 360D0
+!					If (tiles(cnt)%clon .LT. 0D0) &
+!						tiles(cnt)%clon = tiles(cnt)%clon + 360D0
 					! set other attributes
 					tiles(cnt)%trackrate = 1D-4 ! in deg per sec
 					tiles(cnt)%duration = 2048D0*45D0 ! in seconds
