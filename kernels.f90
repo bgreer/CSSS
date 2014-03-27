@@ -49,6 +49,7 @@ Type :: Kernel
 	Integer :: k, n ! integer identifiers
 	Integer :: kersize ! size in degrees
 	Character(256) :: filename ! filename of the kernel in question
+	INTEGER :: lastdepth ! final depth index with sensitivity
 End Type Kernel
 
 ! Data structure for a single tile
@@ -61,7 +62,7 @@ Type :: Tile
 	Real*8, Allocatable :: weightx(:), weighty(:) ! for keeping track of weighting
 	! for knowing which grid points in the sim are relevant:
 	INTEGER :: numgridpts
-	INTEGER, ALLOCATABLE :: gridptx(:), grdpty(:)
+	INTEGER, ALLOCATABLE :: gridptx(:), gridpty(:)
 End Type Tile
 
 ! Kernel description, applies to all kernels
@@ -78,33 +79,6 @@ Type(Tile), Allocatable :: tiles(:)
 
 Contains
 
-	Subroutine Step_Tiles
-		Implicit None
-		Integer :: ii, ix, iy, iz
-		Real*8 :: currphi, currtht, tsrad
-
-		! main loop over every tile
-		Do ii=1,numtiles
-
-		Enddo
-
-
-		! for each tile, add to the running total of vx,vy
-		!  for each kernel. also increment the weighting
-
-		! since the current processor doesn't keep the whole grid in local
-		! memory, try to only loop over tiles that overlap the local grid.
-		! weighting should reflect this.
-	End Subroutine Step_Tiles
-
-	! wrap a value between 0 and 2pi
-	REAL*8 FUNCTION wrapphi (x)
-		IMPLICIT NONE
-		REAL*8 :: x
-		wrapphi = x
-		IF (x .GT. 6.28318530718D0) wrapphi = x - 6.28318530718D0
-		IF (x .LT. 0D0) wrapphi = x + 6.28318530718D0
-	END FUNCTION wrapphi
 	
 	! Load a specialized kernel set
 	Subroutine Load_Kernels (nr, r_ind)
@@ -157,7 +131,7 @@ Contains
 		c = 1
 		Do ij=1,numkersizes
 			Do ii=1,numkers_ts(ij)
-				Read(55,*) kers(c)%n, kers(c)%k, kers(c)%filename
+				Read(55,*) kers(c)%k, kers(c)%n, kers(c)%filename
 				kers(c)%kersize = kersize_deg(ij)
 				c = c + 1
 			Enddo
@@ -214,6 +188,12 @@ Contains
 			ENDDO
 			! get rid of non-interpolated sensitivity
 			DEALLOCATE(kers(ii)%sens)
+			! find deepest part of kernel
+			ij = nr
+			DO WHILE (SUM(kers(ii)%sens_interp(:,:,ij)) .EQ. 0D0)
+				ij = ij - 1
+			ENDDO
+			kers(ii)%lastdepth = ij
 		ENDDO
 		Deallocate(slice)
 	End Subroutine Load_Kernels
@@ -226,7 +206,6 @@ Contains
 		Real*8 :: value(ker_dim(1),ker_dim(2))
 		Real*8 :: leftval(ker_dim(1),ker_dim(2)), rightval(ker_dim(1),ker_dim(2))
 		Real*8 :: leftpos, rightpos
-		Integer :: ind1, ind2, ii, ij
 		Logical :: done
 
 		value(:,:) = 0D0
@@ -320,12 +299,6 @@ Contains
 		next_higher = ii
 	END FUNCTION next_higher
 
-	! turn depth in Mm into radius in cm
-	REAL FUNCTION Translate_Depth (x)
-		IMPLICIT NONE
-		REAL :: x
-		Translate_depth = 6.955D10 - (x * 1D8)
-	END FUNCTION Translate_Depth
 
 
 	! Take each tile and move it in longitude by an amount determined by the
@@ -342,9 +315,20 @@ Contains
 	End Subroutine Nudge_Tiles
 
 
-
 	Subroutine Unload_Kernels
 		! lol, memory management
+		IMPLICIT NONE
+		INTEGER :: ii
+
+		DO ii=1,numkers
+			DEALLOCATE(kers(ii)%sens_interp)
+		ENDDO
+
+		DEALLOCATE(kers)
+		DEALLOCATE(ker_depth)
+		DEALLOCATE(numkers_ts)
+		DEALLOCATE(kersize_deg)
+
 	End Subroutine Unload_Kernels
 
 	! Create a set of tiles
@@ -423,6 +407,18 @@ Contains
 		Enddo
 
 	End Subroutine Create_Tiles
+
+	SUBROUTINE Unload_Tiles ()
+		IMPLICIT NONE
+		INTEGER :: ii
+		DO ii=1,numtiles
+			DEALLOCATE(tiles(ii)%vx)
+			DEALLOCATE(tiles(ii)%vy)
+			DEALLOCATE(tiles(ii)%weightx)
+			DEALLOCATE(tiles(ii)%weighty)
+		ENDDO
+		DEALLOCATE(tiles)
+	END SUBROUTINE Unload_Tiles
 
 	! Have processor 0 gather weights and output final results
 	Subroutine Output_Tileset
